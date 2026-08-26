@@ -1,39 +1,28 @@
+import { footballDataFetch } from "./football-data.js";
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/") {
+      return new Response("GoalPredict API is running.", {
+        headers: {
+          "Content-Type": "text/plain"
+        }
+      });
+    }
+
     if (url.pathname === "/api/test-football") {
       try {
-        const response = await fetch(
-          "https://api.football-data.org/v4/competitions",
-          {
-            headers: {
-              "X-Auth-Token": env.FOOTBALL_DATA_TOKEN
-            }
-          }
+        const data = await footballDataFetch(
+          "/competitions",
+          env
         );
-
-        if (!response.ok) {
-          return new Response(
-            JSON.stringify({
-              success: false,
-              status: response.status,
-              message: "Football data API request failed"
-            }),
-            {
-              status: 502,
-              headers: {
-                "Content-Type": "application/json"
-              }
-            }
-          );
-        }
-
-        const data = await response.json();
 
         return new Response(
           JSON.stringify({
             success: true,
+            count: data.competitions.length,
             competitions: data.competitions
           }),
           {
@@ -42,12 +31,11 @@ export default {
             }
           }
         );
-
       } catch (error) {
         return new Response(
           JSON.stringify({
             success: false,
-            message: "Unable to connect to football-data.org"
+            message: error.message
           }),
           {
             status: 500,
@@ -59,6 +47,8 @@ export default {
       }
     }
 
-    return new Response("GoalPredict API is running.");
+    return new Response("Not found", {
+      status: 404
+    });
   }
 };
