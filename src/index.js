@@ -47,6 +47,39 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/test-db") {
+      try {
+        const result = await env.DB
+          .prepare("SELECT 1 AS test")
+          .first();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            database: result
+          }),
+          {
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }
+        );
+      } catch (error) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: error.message
+          }),
+          {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }
+        );
+      }
+    }
+
     return new Response("Not found", {
       status: 404
     });
