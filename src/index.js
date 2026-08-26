@@ -254,6 +254,7 @@ export default {
 
     // --------------------------------------------------
     // SYNC TEAMS
+    //
     // Example:
     // /api/sync-teams?competition=PL
     // --------------------------------------------------
@@ -263,7 +264,8 @@ export default {
           throw new Error("FOOTBALL_DATA_TOKEN is not configured");
         }
 
-        const competitionCode = url.searchParams.get("competition");
+        const competitionCode =
+          url.searchParams.get("competition");
 
         if (!competitionCode) {
           return new Response(
@@ -306,7 +308,7 @@ export default {
 
         // --------------------------------------------------
         // GET COMPETITION INFORMATION
-        // Used to obtain the current season
+        // This gives us the current season.
         // --------------------------------------------------
 
         const competitionResponse = await fetch(
@@ -323,20 +325,23 @@ export default {
         );
 
         if (!competitionResponse.ok) {
-          const errorText = await competitionResponse.text();
+          const errorText =
+            await competitionResponse.text();
 
           throw new Error(
             `football-data.org returned ${competitionResponse.status}: ${errorText}`
           );
         }
 
-        const competitionData = await competitionResponse.json();
+        const competitionData =
+          await competitionResponse.json();
 
         // --------------------------------------------------
-        // CREATE / UPDATE SEASON
+        // CURRENT SEASON
         // --------------------------------------------------
 
-        const providerSeasonId = competitionData.currentSeason?.id;
+        const providerSeasonId =
+          competitionData.currentSeason?.id;
 
         if (!providerSeasonId) {
           throw new Error(
@@ -344,14 +349,28 @@ export default {
           );
         }
 
-        const seasonName =
-          `${competitionData.currentSeason.startDate} / ${competitionData.currentSeason.endDate}`;
-
-        const startDate =
+        const seasonStartDate =
           competitionData.currentSeason.startDate || null;
 
-        const endDate =
+        const seasonEndDate =
           competitionData.currentSeason.endDate || null;
+
+        const seasonName =
+          `${seasonStartDate} / ${seasonEndDate}`;
+
+        // Determine the season year automatically.
+        //
+        // Example:
+        // 2026-08-21 -> 2026
+        //
+        const seasonYear =
+          seasonStartDate
+            ? seasonStartDate.substring(0, 4)
+            : new Date().getUTCFullYear().toString();
+
+        // --------------------------------------------------
+        // CREATE / UPDATE SEASON
+        // --------------------------------------------------
 
         let season = await env.DB
           .prepare(`
@@ -379,32 +398,33 @@ export default {
             `)
             .bind(
               seasonName,
-              startDate,
-              endDate,
+              seasonStartDate,
+              seasonEndDate,
               season.id
             )
             .run();
         } else {
-          const insertedSeason = await env.DB
-            .prepare(`
-              INSERT INTO seasons (
-                competition_id,
-                provider_id,
-                name,
-                start_date,
-                end_date,
-                current
+          const insertedSeason =
+            await env.DB
+              .prepare(`
+                INSERT INTO seasons (
+                  competition_id,
+                  provider_id,
+                  name,
+                  start_date,
+                  end_date,
+                  current
+                )
+                VALUES (?, ?, ?, ?, ?, 1)
+              `)
+              .bind(
+                competition.id,
+                providerSeasonId,
+                seasonName,
+                seasonStartDate,
+                seasonEndDate
               )
-              VALUES (?, ?, ?, ?, ?, 1)
-            `)
-            .bind(
-              competition.id,
-              providerSeasonId,
-              seasonName,
-              startDate,
-              endDate
-            )
-            .run();
+              .run();
 
           season = {
             id: insertedSeason.meta.last_row_id
@@ -412,13 +432,19 @@ export default {
         }
 
         // --------------------------------------------------
-        // GET TEAMS FROM DEDICATED TEAMS ENDPOINT
+        // GET TEAMS FROM FOOTBALL-DATA.ORG
+        //
+        // IMPORTANT:
+        // We explicitly provide the season year.
         // --------------------------------------------------
 
-        const teamsResponse = await fetch(
+        const teamsUrl =
           `https://api.football-data.org/v4/competitions/${encodeURIComponent(
             competitionCode
-          )}/teams`,
+          )}/teams?season=${encodeURIComponent(seasonYear)}`;
+
+        const teamsResponse = await fetch(
+          teamsUrl,
           {
             method: "GET",
             headers: {
@@ -429,14 +455,16 @@ export default {
         );
 
         if (!teamsResponse.ok) {
-          const errorText = await teamsResponse.text();
+          const errorText =
+            await teamsResponse.text();
 
           throw new Error(
             `football-data.org teams endpoint returned ${teamsResponse.status}: ${errorText}`
           );
         }
 
-        const teamsData = await teamsResponse.json();
+        const teamsData =
+          await teamsResponse.json();
 
         const teams = teamsData.teams || [];
 
@@ -451,9 +479,12 @@ export default {
         for (const team of teams) {
           const providerId = team.id;
           const name = team.name;
-          const shortName = team.shortName || null;
-          const country = team.area?.name || null;
-          const crestUrl = team.crest || null;
+          const shortName =
+            team.shortName || null;
+          const country =
+            team.area?.name || null;
+          const crestUrl =
+            team.crest || null;
 
           const slug = name
             .toLowerCase()
@@ -475,6 +506,10 @@ export default {
             .first();
 
           let teamId;
+
+          // --------------------------------------------------
+          // UPDATE TEAM
+          // --------------------------------------------------
 
           if (existingTeam) {
             teamId = existingTeam.id;
@@ -503,31 +538,39 @@ export default {
               .run();
 
             updatedTeams++;
-          } else {
-            const insertedTeam = await env.DB
-              .prepare(`
-                INSERT INTO teams (
-                  provider_id,
+          }
+
+          // --------------------------------------------------
+          // INSERT TEAM
+          // --------------------------------------------------
+
+          else {
+            const insertedTeam =
+              await env.DB
+                .prepare(`
+                  INSERT INTO teams (
+                    provider_id,
+                    name,
+                    short_name,
+                    slug,
+                    country,
+                    crest_url,
+                    active
+                  )
+                  VALUES (?, ?, ?, ?, ?, ?, 1)
+                `)
+                .bind(
+                  providerId,
                   name,
-                  short_name,
+                  shortName,
                   slug,
                   country,
-                  crest_url,
-                  active
+                  crestUrl
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 1)
-              `)
-              .bind(
-                providerId,
-                name,
-                shortName,
-                slug,
-                country,
-                crestUrl
-              )
-              .run();
+                .run();
 
-            teamId = insertedTeam.meta.last_row_id;
+            teamId =
+              insertedTeam.meta.last_row_id;
 
             insertedTeams++;
           }
@@ -536,20 +579,21 @@ export default {
           // LINK TEAM TO COMPETITION + SEASON
           // --------------------------------------------------
 
-          const existingLink = await env.DB
-            .prepare(`
-              SELECT id
-              FROM team_seasons
-              WHERE team_id = ?
-                AND competition_id = ?
-                AND season_id = ?
-            `)
-            .bind(
-              teamId,
-              competition.id,
-              season.id
-            )
-            .first();
+          const existingLink =
+            await env.DB
+              .prepare(`
+                SELECT id
+                FROM team_seasons
+                WHERE team_id = ?
+                  AND competition_id = ?
+                  AND season_id = ?
+              `)
+              .bind(
+                teamId,
+                competition.id,
+                season.id
+              )
+              .first();
 
           if (!existingLink) {
             await env.DB
@@ -582,17 +626,21 @@ export default {
           JSON.stringify({
             success: true,
             source: "football-data.org",
+
             competition: {
               id: competition.id,
               provider_id: competition.provider_id,
               code: competition.competition_code,
               name: competition.name
             },
+
             season: {
               id: season.id,
               provider_id: providerSeasonId,
-              name: seasonName
+              name: seasonName,
+              year: seasonYear
             },
+
             teams: {
               total: teams.length,
               inserted: insertedTeams,
