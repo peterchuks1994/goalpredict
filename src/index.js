@@ -2,17 +2,24 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    const json = (data, status = 200) =>
-      new Response(JSON.stringify(data), {
+    // --------------------------------------------------
+    // HELPERS
+    // --------------------------------------------------
+
+    const json = (data, status = 200) => {
+      return new Response(JSON.stringify(data), {
         status,
         headers: {
           "Content-Type": "application/json"
         }
       });
+    };
 
     const footballFetch = async (path) => {
       if (!env.FOOTBALL_DATA_TOKEN) {
-        throw new Error("FOOTBALL_DATA_TOKEN is not configured");
+        throw new Error(
+          "FOOTBALL_DATA_TOKEN is not configured"
+        );
       }
 
       const response = await fetch(
@@ -50,7 +57,7 @@ export default {
     }
 
     // --------------------------------------------------
-    // TEST D1
+    // TEST DATABASE
     // --------------------------------------------------
 
     if (url.pathname === "/api/test-db") {
@@ -84,7 +91,8 @@ export default {
 
         return json({
           success: true,
-          count: data.competitions?.length || 0,
+          source: "football-data.org",
+          total: data.competitions?.length || 0,
           competitions: data.competitions || []
         });
       } catch (error) {
@@ -112,11 +120,16 @@ export default {
         for (const competition of data.competitions || []) {
           const providerId = competition.id;
           const name = competition.name;
-          const country = competition.area?.name || null;
-          const countryCode = competition.area?.code || null;
-          const competitionCode = competition.code || null;
-          const type = competition.type || null;
-          const logoUrl = competition.emblem || null;
+          const country =
+            competition.area?.name || null;
+          const countryCode =
+            competition.area?.code || null;
+          const competitionCode =
+            competition.code || null;
+          const type =
+            competition.type || null;
+          const logoUrl =
+            competition.emblem || null;
 
           const slug = name
             .toLowerCase()
@@ -125,9 +138,11 @@ export default {
             .replace(/^-+|-+$/g, "");
 
           const existing = await env.DB
-            .prepare(
-              "SELECT id FROM competitions WHERE provider_id = ?"
-            )
+            .prepare(`
+              SELECT id
+              FROM competitions
+              WHERE provider_id = ?
+            `)
             .bind(providerId)
             .first();
 
@@ -212,7 +227,6 @@ export default {
     // --------------------------------------------------
     // SYNC TEAMS
     //
-    // Example:
     // /api/sync-teams?competition=PL
     // --------------------------------------------------
 
@@ -252,7 +266,9 @@ export default {
         }
 
         const data = await footballFetch(
-          `/competitions/${encodeURIComponent(competitionCode)}`
+          `/competitions/${encodeURIComponent(
+            competitionCode
+          )}`
         );
 
         const providerSeasonId =
@@ -497,7 +513,6 @@ export default {
     // --------------------------------------------------
     // SYNC MATCHES
     //
-    // Example:
     // /api/sync-matches?competition=PL
     // --------------------------------------------------
 
@@ -518,7 +533,7 @@ export default {
         }
 
         // ----------------------------------------------
-        // Find competition
+        // FIND COMPETITION
         // ----------------------------------------------
 
         const competition = await env.DB
@@ -541,7 +556,7 @@ export default {
         }
 
         // ----------------------------------------------
-        // Get current season from D1
+        // FIND CURRENT SEASON
         // ----------------------------------------------
 
         const season = await env.DB
@@ -568,7 +583,7 @@ export default {
         }
 
         // ----------------------------------------------
-        // Fetch matches
+        // FETCH MATCHES
         // ----------------------------------------------
 
         const data = await footballFetch(
@@ -584,43 +599,37 @@ export default {
         let skipped = 0;
 
         // ----------------------------------------------
-        // Process matches
+        // PROCESS MATCHES
         // ----------------------------------------------
 
         for (const match of matches) {
           const providerId = match.id;
 
-          const utcDate =
+          const matchday =
+            match.matchday ?? null;
+
+          const kickoffAt =
             match.utcDate || null;
 
           const status =
-            match.status || null;
+            match.status || "SCHEDULED";
 
-          const matchday =
-            match.matchday || null;
-
-          const stage =
-            match.stage || null;
-
-          const group =
-            match.group || null;
-
-          const homeTeamProviderId =
+          const homeProviderId =
             match.homeTeam?.id;
 
-          const awayTeamProviderId =
+          const awayProviderId =
             match.awayTeam?.id;
 
           if (
-            !homeTeamProviderId ||
-            !awayTeamProviderId
+            !homeProviderId ||
+            !awayProviderId
           ) {
             skipped++;
             continue;
           }
 
           // --------------------------------------------
-          // Find local teams
+          // FIND HOME TEAM
           // --------------------------------------------
 
           const homeTeam = await env.DB
@@ -629,8 +638,12 @@ export default {
               FROM teams
               WHERE provider_id = ?
             `)
-            .bind(homeTeamProviderId)
+            .bind(homeProviderId)
             .first();
+
+          // --------------------------------------------
+          // FIND AWAY TEAM
+          // --------------------------------------------
 
           const awayTeam = await env.DB
             .prepare(`
@@ -638,7 +651,7 @@ export default {
               FROM teams
               WHERE provider_id = ?
             `)
-            .bind(awayTeamProviderId)
+            .bind(awayProviderId)
             .first();
 
           if (!homeTeam || !awayTeam) {
@@ -647,7 +660,7 @@ export default {
           }
 
           // --------------------------------------------
-          // Score
+          // SCORES
           // --------------------------------------------
 
           const homeScore =
@@ -657,7 +670,27 @@ export default {
             match.score?.fullTime?.away ?? null;
 
           // --------------------------------------------
-          // Check existing match
+          // WINNER
+          // --------------------------------------------
+
+          let winner = null;
+
+          if (
+            match.score?.winner === "HOME_TEAM"
+          ) {
+            winner = "HOME";
+          } else if (
+            match.score?.winner === "AWAY_TEAM"
+          ) {
+            winner = "AWAY";
+          } else if (
+            match.score?.winner === "DRAW"
+          ) {
+            winner = "DRAW";
+          }
+
+          // --------------------------------------------
+          // CHECK EXISTING MATCH
           // --------------------------------------------
 
           const existing = await env.DB
@@ -669,88 +702,89 @@ export default {
             .bind(providerId)
             .first();
 
-          if (existing) {
-            // ------------------------------------------
-            // Update
-            // ------------------------------------------
+          // --------------------------------------------
+          // UPDATE EXISTING
+          // --------------------------------------------
 
+          if (existing) {
             await env.DB
               .prepare(`
                 UPDATE matches
                 SET
                   competition_id = ?,
                   season_id = ?,
+                  matchday = ?,
                   home_team_id = ?,
                   away_team_id = ?,
-                  utc_date = ?,
+                  kickoff_at = ?,
                   status = ?,
-                  matchday = ?,
-                  stage = ?,
-                  group_name = ?,
                   home_score = ?,
                   away_score = ?,
-                  updated_at = CURRENT_TIMESTAMP
+                  winner = ?
                 WHERE provider_id = ?
               `)
               .bind(
                 competition.id,
                 season.id,
+                matchday,
                 homeTeam.id,
                 awayTeam.id,
-                utcDate,
+                kickoffAt,
                 status,
-                matchday,
-                stage,
-                group,
                 homeScore,
                 awayScore,
+                winner,
                 providerId
               )
               .run();
 
             updated++;
-          } else {
-            // ------------------------------------------
-            // Insert
-            // ------------------------------------------
+          }
 
+          // --------------------------------------------
+          // INSERT NEW
+          // --------------------------------------------
+
+          else {
             await env.DB
               .prepare(`
                 INSERT INTO matches (
                   provider_id,
                   competition_id,
                   season_id,
+                  matchday,
                   home_team_id,
                   away_team_id,
-                  utc_date,
+                  kickoff_at,
                   status,
-                  matchday,
-                  stage,
-                  group_name,
                   home_score,
-                  away_score
+                  away_score,
+                  winner
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `)
               .bind(
                 providerId,
                 competition.id,
                 season.id,
+                matchday,
                 homeTeam.id,
                 awayTeam.id,
-                utcDate,
+                kickoffAt,
                 status,
-                matchday,
-                stage,
-                group,
                 homeScore,
-                awayScore
+                awayScore,
+                winner
               )
               .run();
 
             inserted++;
           }
         }
+
+        // ----------------------------------------------
+        // RESPONSE
+        // ----------------------------------------------
 
         return json({
           success: true,
