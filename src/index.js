@@ -269,7 +269,8 @@ export default {
           return new Response(
             JSON.stringify({
               success: false,
-              message: "Missing competition parameter. Example: ?competition=PL"
+              message:
+                "Missing competition parameter. Example: ?competition=PL"
             }),
             {
               status: 400,
@@ -280,7 +281,10 @@ export default {
           );
         }
 
-        // Find competition in D1
+        // --------------------------------------------------
+        // FIND COMPETITION IN D1
+        // --------------------------------------------------
+
         const competition = await env.DB
           .prepare(`
             SELECT
@@ -300,8 +304,12 @@ export default {
           );
         }
 
-        // Fetch competition data from football-data.org
-        const response = await fetch(
+        // --------------------------------------------------
+        // GET COMPETITION INFORMATION
+        // Used to obtain the current season
+        // --------------------------------------------------
+
+        const competitionResponse = await fetch(
           `https://api.football-data.org/v4/competitions/${encodeURIComponent(
             competitionCode
           )}`,
@@ -314,21 +322,21 @@ export default {
           }
         );
 
-        if (!response.ok) {
-          const errorText = await response.text();
+        if (!competitionResponse.ok) {
+          const errorText = await competitionResponse.text();
 
           throw new Error(
-            `football-data.org returned ${response.status}: ${errorText}`
+            `football-data.org returned ${competitionResponse.status}: ${errorText}`
           );
         }
 
-        const data = await response.json();
+        const competitionData = await competitionResponse.json();
 
         // --------------------------------------------------
         // CREATE / UPDATE SEASON
         // --------------------------------------------------
 
-        const providerSeasonId = data.currentSeason?.id;
+        const providerSeasonId = competitionData.currentSeason?.id;
 
         if (!providerSeasonId) {
           throw new Error(
@@ -337,10 +345,13 @@ export default {
         }
 
         const seasonName =
-          `${data.currentSeason.startDate} / ${data.currentSeason.endDate}`;
+          `${competitionData.currentSeason.startDate} / ${competitionData.currentSeason.endDate}`;
 
-        const startDate = data.currentSeason.startDate || null;
-        const endDate = data.currentSeason.endDate || null;
+        const startDate =
+          competitionData.currentSeason.startDate || null;
+
+        const endDate =
+          competitionData.currentSeason.endDate || null;
 
         let season = await env.DB
           .prepare(`
@@ -401,14 +412,41 @@ export default {
         }
 
         // --------------------------------------------------
+        // GET TEAMS FROM DEDICATED TEAMS ENDPOINT
+        // --------------------------------------------------
+
+        const teamsResponse = await fetch(
+          `https://api.football-data.org/v4/competitions/${encodeURIComponent(
+            competitionCode
+          )}/teams`,
+          {
+            method: "GET",
+            headers: {
+              "X-Auth-Token": env.FOOTBALL_DATA_TOKEN,
+              "Accept": "application/json"
+            }
+          }
+        );
+
+        if (!teamsResponse.ok) {
+          const errorText = await teamsResponse.text();
+
+          throw new Error(
+            `football-data.org teams endpoint returned ${teamsResponse.status}: ${errorText}`
+          );
+        }
+
+        const teamsData = await teamsResponse.json();
+
+        const teams = teamsData.teams || [];
+
+        // --------------------------------------------------
         // SYNC TEAMS
         // --------------------------------------------------
 
         let insertedTeams = 0;
         let updatedTeams = 0;
         let linkedTeams = 0;
-
-        const teams = data.teams || [];
 
         for (const team of teams) {
           const providerId = team.id;
@@ -423,7 +461,10 @@ export default {
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/^-+|-+$/g, "");
 
-          // Find existing team
+          // --------------------------------------------------
+          // FIND EXISTING TEAM
+          // --------------------------------------------------
+
           const existingTeam = await env.DB
             .prepare(`
               SELECT id
@@ -533,6 +574,10 @@ export default {
           }
         }
 
+        // --------------------------------------------------
+        // RESPONSE
+        // --------------------------------------------------
+
         return new Response(
           JSON.stringify({
             success: true,
@@ -580,6 +625,7 @@ export default {
     // --------------------------------------------------
     // NOT FOUND
     // --------------------------------------------------
+
     return new Response("Not found", {
       status: 404
     });
