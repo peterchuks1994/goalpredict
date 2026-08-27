@@ -1,4 +1,4 @@
-```javascript
+
 const API_BASE_URL = "https://api.football-data.org/v4";
 
 function jsonResponse(data, status = 200) {
