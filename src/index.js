@@ -1,4 +1,3 @@
-
 const API_BASE_URL = "https://api.football-data.org/v4";
 
 function json(data, status = 200) {
@@ -173,6 +172,10 @@ export default {
 
             updated++;
           } else {
+            // FIX: original code was missing `competitionCode` in the
+            // bind() list below, which left one placeholder unfilled
+            // and shifted every subsequent value into the wrong column
+            // (type -> competition_code, logo_url -> type, logo_url left null).
             await env.DB
               .prepare(`
                 INSERT INTO competitions (
@@ -194,6 +197,7 @@ export default {
                 slug,
                 country,
                 countryCode,
+                competitionCode,
                 type,
                 logoUrl
               )
@@ -1560,4 +1564,3 @@ export default {
     });
   }
 };
-```
