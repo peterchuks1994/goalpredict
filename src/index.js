@@ -1,4 +1,4 @@
-
+```javascript
 const API_BASE_URL = "https://api.football-data.org/v4";
 
 function jsonResponse(data, status = 200) {
@@ -46,9 +46,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // --------------------------------------------------
+    // ==================================================
     // HOME
-    // --------------------------------------------------
+    // ==================================================
     if (url.pathname === "/") {
       return new Response("GoalPredict API is running.", {
         headers: {
@@ -57,9 +57,9 @@ export default {
       });
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // TEST DATABASE
-    // --------------------------------------------------
+    // ==================================================
     if (url.pathname === "/api/test-db") {
       try {
         if (!env.DB) {
@@ -85,9 +85,9 @@ export default {
       }
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // TEST FOOTBALL-DATA.ORG
-    // --------------------------------------------------
+    // ==================================================
     if (url.pathname === "/api/test-football") {
       try {
         const data = await footballDataFetch(
@@ -98,7 +98,7 @@ export default {
         return jsonResponse({
           success: true,
           source: "football-data.org",
-          count: data.competitions?.length || 0,
+          total: data.competitions?.length || 0,
           competitions: data.competitions || []
         });
       } catch (error) {
@@ -112,9 +112,9 @@ export default {
       }
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // SYNC COMPETITIONS
-    // --------------------------------------------------
+    // ==================================================
     if (url.pathname === "/api/sync-competitions") {
       try {
         if (!env.DB) {
@@ -224,11 +224,10 @@ export default {
       }
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // SYNC TEAMS
-    // Example:
     // /api/sync-teams?competition=PL
-    // --------------------------------------------------
+    // ==================================================
     if (url.pathname === "/api/sync-teams") {
       try {
         if (!env.DB) {
@@ -281,14 +280,14 @@ export default {
           );
         }
 
-        const seasonName =
-          `${data.currentSeason.startDate} / ${data.currentSeason.endDate}`;
-
         const startDate =
           data.currentSeason.startDate || null;
 
         const endDate =
           data.currentSeason.endDate || null;
+
+        const seasonName =
+          `${startDate} / ${endDate}`;
 
         let season = await env.DB
           .prepare(`
@@ -425,7 +424,6 @@ export default {
               .run();
 
             teamId = insertedTeam.meta.last_row_id;
-
             insertedTeams++;
           }
 
@@ -502,15 +500,10 @@ export default {
       }
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // SYNC MATCHES
-    // Example:
     // /api/sync-matches?competition=PL
-    //
-    // IMPORTANT:
-    // This endpoint fetches matches in ONE football-data.org
-    // request, then writes them to D1.
-    // --------------------------------------------------
+    // ==================================================
     if (url.pathname === "/api/sync-matches") {
       try {
         if (!env.DB) {
@@ -555,11 +548,10 @@ export default {
           env
         );
 
-        const providerSeasonId =
-          data.matches?.[0]?.season?.id ||
-          null;
-
         let season = null;
+
+        const providerSeasonId =
+          data.matches?.[0]?.season?.id || null;
 
         if (providerSeasonId) {
           season = await env.DB
@@ -649,11 +641,8 @@ export default {
           const awayScore =
             match.score?.fullTime?.away ?? null;
 
-          let winner = null;
-
-          if (match.score?.winner) {
-            winner = match.score.winner;
-          }
+          const winner =
+            match.score?.winner || null;
 
           const matchday =
             match.matchday ?? null;
@@ -770,15 +759,14 @@ export default {
       }
     }
 
-    // --------------------------------------------------
-    // SYNC TEAM STATISTICS + FORM
+    // ==================================================
+    // SYNC STATISTICS + FORM
     //
-    // Example:
     // /api/sync-statistics?competition=PL
     //
-    // Uses existing D1 matches only.
-    // No football-data.org request is made here.
-    // --------------------------------------------------
+    // Uses D1 only.
+    // Does NOT call football-data.org.
+    // ==================================================
     if (url.pathname === "/api/sync-statistics") {
       try {
         if (!env.DB) {
@@ -841,7 +829,7 @@ export default {
 
         const teamsResult = await env.DB
           .prepare(`
-            SELECT
+            SELECT DISTINCT
               t.id,
               t.provider_id,
               t.name
@@ -860,15 +848,17 @@ export default {
 
         const teams = teamsResult.results || [];
 
+        let statisticsCreated = 0;
         let statisticsUpdated = 0;
+        let formCreated = 0;
         let formUpdated = 0;
 
-        // --------------------------------------------------
+        // ==================================================
         // PROCESS EACH TEAM
-        // --------------------------------------------------
+        // ==================================================
         for (const team of teams) {
           // ----------------------------------------------
-          // SEASON STATISTICS
+          // ALL FINISHED MATCHES
           // ----------------------------------------------
           const matchesResult = await env.DB
             .prepare(`
@@ -878,9 +868,7 @@ export default {
                 away_team_id,
                 home_score,
                 away_score,
-                status,
-                kickoff_at,
-                winner
+                kickoff_at
               FROM matches
               WHERE competition_id = ?
                 AND season_id = ?
@@ -888,7 +876,7 @@ export default {
                   home_team_id = ?
                   OR away_team_id = ?
                 )
-                AND status IN ('FINISHED', 'TIMED')
+                AND status = 'FINISHED'
                 AND home_score IS NOT NULL
                 AND away_score IS NOT NULL
               ORDER BY kickoff_at ASC
@@ -977,22 +965,23 @@ export default {
             goalsFor - goalsAgainst;
 
           // ----------------------------------------------
-          // UPSERT TEAM STATISTICS
+          // TEAM STATISTICS UPSERT
           // ----------------------------------------------
-          const existingStatistics = await env.DB
-            .prepare(`
-              SELECT id
-              FROM team_statistics
-              WHERE team_id = ?
-                AND competition_id = ?
-                AND season_id = ?
-            `)
-            .bind(
-              team.id,
-              competition.id,
-              season.id
-            )
-            .first();
+          const existingStatistics =
+            await env.DB
+              .prepare(`
+                SELECT id
+                FROM team_statistics
+                WHERE team_id = ?
+                  AND competition_id = ?
+                  AND season_id = ?
+              `)
+              .bind(
+                team.id,
+                competition.id,
+                season.id
+              )
+              .first();
 
           if (existingStatistics) {
             await env.DB
@@ -1032,6 +1021,8 @@ export default {
                 existingStatistics.id
               )
               .run();
+
+            statisticsUpdated++;
           } else {
             await env.DB
               .prepare(`
@@ -1075,9 +1066,9 @@ export default {
                 over35Matches
               )
               .run();
-          }
 
-          statisticsUpdated++;
+            statisticsCreated++;
+          }
 
           // ----------------------------------------------
           // LAST 5 FINISHED MATCHES
@@ -1098,7 +1089,7 @@ export default {
                   home_team_id = ?
                   OR away_team_id = ?
                 )
-                AND status IN ('FINISHED', 'TIMED')
+                AND status = 'FINISHED'
                 AND home_score IS NOT NULL
                 AND away_score IS NOT NULL
               ORDER BY kickoff_at DESC
@@ -1115,6 +1106,9 @@ export default {
           const recentMatches =
             recentResult.results || [];
 
+          const chronologicalMatches =
+            [...recentMatches].reverse();
+
           let recentWins = 0;
           let recentDraws = 0;
           let recentLosses = 0;
@@ -1122,10 +1116,6 @@ export default {
           let recentGoalsAgainst = 0;
           let recentPoints = 0;
           let formString = "";
-
-          // Reverse so form is oldest -> newest
-          const chronologicalMatches =
-            [...recentMatches].reverse();
 
           for (const match of chronologicalMatches) {
             const isHome =
@@ -1159,7 +1149,7 @@ export default {
           }
 
           // ----------------------------------------------
-          // UPSERT TEAM FORM
+          // TEAM FORM UPSERT
           // ----------------------------------------------
           const existingForm = await env.DB
             .prepare(`
@@ -1204,6 +1194,8 @@ export default {
                 existingForm.id
               )
               .run();
+
+            formUpdated++;
           } else {
             await env.DB
               .prepare(`
@@ -1237,14 +1229,14 @@ export default {
                 formString
               )
               .run();
-          }
 
-          formUpdated++;
+            formCreated++;
+          }
         }
 
-        // --------------------------------------------------
-        // SUMMARY
-        // --------------------------------------------------
+        // ==================================================
+        // FINAL COUNTS
+        // ==================================================
         const statisticsCount = await env.DB
           .prepare(`
             SELECT COUNT(*) AS total
@@ -1271,6 +1263,22 @@ export default {
           )
           .first();
 
+        const finishedMatches = await env.DB
+          .prepare(`
+            SELECT COUNT(*) AS total
+            FROM matches
+            WHERE competition_id = ?
+              AND season_id = ?
+              AND status = 'FINISHED'
+              AND home_score IS NOT NULL
+              AND away_score IS NOT NULL
+          `)
+          .bind(
+            competition.id,
+            season.id
+          )
+          .first();
+
         return jsonResponse({
           success: true,
           source: "D1 existing matches",
@@ -1285,17 +1293,23 @@ export default {
             provider_id: season.provider_id,
             name: season.name
           },
+          matches: {
+            finished_used_for_statistics:
+              finishedMatches?.total || 0
+          },
           teams: {
             processed: teams.length
           },
           statistics: {
+            created: statisticsCreated,
             updated: statisticsUpdated,
             records_in_database:
               statisticsCount?.total || 0
           },
           form: {
+            created: formCreated,
             updated: formUpdated,
-            matches_considered_per_team: 5,
+            maximum_matches_per_team: 5,
             records_in_database:
               formCount?.total || 0
           }
@@ -1311,12 +1325,17 @@ export default {
       }
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // NOT FOUND
-    // --------------------------------------------------
-    return new Response("Not found", {
-      status: 404
-    });
+    // ==================================================
+    return jsonResponse(
+      {
+        success: false,
+        message: "Route not found",
+        path: url.pathname
+      },
+      404
+    );
   }
 };
 ```
