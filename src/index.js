@@ -51,6 +51,209 @@ async function footballDataFetch(path, env) {
   return response.json();
 }
 
+function safeDivide(numerator, denominator) {
+  if (!denominator || Number(denominator) === 0) {
+    return 0;
+  }
+
+  return Number(numerator || 0) / Number(denominator);
+}
+
+function roundNumber(value, decimals = 4) {
+  const factor = 10 ** decimals;
+  return Math.round(Number(value || 0) * factor) / factor;
+}
+
+function buildTeamFeatures(statistics, form) {
+  const matchesPlayed = Number(statistics?.matches_played || 0);
+  const recentMatches = Number(form?.matches_considered || 0);
+
+  const points = Number(statistics?.points || 0);
+  const wins = Number(statistics?.wins || 0);
+  const draws = Number(statistics?.draws || 0);
+  const losses = Number(statistics?.losses || 0);
+
+  const goalsFor = Number(statistics?.goals_for || 0);
+  const goalsAgainst = Number(statistics?.goals_against || 0);
+  const goalDifference = Number(
+    statistics?.goal_difference ??
+    (goalsFor - goalsAgainst)
+  );
+
+  const cleanSheets = Number(statistics?.clean_sheets || 0);
+  const bttsMatches = Number(statistics?.btts_matches || 0);
+  const over15Matches = Number(statistics?.over_15_matches || 0);
+  const over25Matches = Number(statistics?.over_25_matches || 0);
+  const over35Matches = Number(statistics?.over_35_matches || 0);
+
+  const recentWins = Number(form?.wins || 0);
+  const recentDraws = Number(form?.draws || 0);
+  const recentLosses = Number(form?.losses || 0);
+  const recentGoalsFor = Number(form?.goals_for || 0);
+  const recentGoalsAgainst = Number(form?.goals_against || 0);
+  const recentPoints = Number(form?.points || 0);
+
+  return {
+    matches_played: matchesPlayed,
+    points,
+    wins,
+    draws,
+    losses,
+    goals_for: goalsFor,
+    goals_against: goalsAgainst,
+    goal_difference: goalDifference,
+    clean_sheets: cleanSheets,
+    btts_matches: bttsMatches,
+    over_15_matches: over15Matches,
+    over_25_matches: over25Matches,
+    over_35_matches: over35Matches,
+
+    points_per_match: roundNumber(
+      safeDivide(points, matchesPlayed)
+    ),
+
+    win_rate: roundNumber(
+      safeDivide(wins, matchesPlayed)
+    ),
+
+    draw_rate: roundNumber(
+      safeDivide(draws, matchesPlayed)
+    ),
+
+    loss_rate: roundNumber(
+      safeDivide(losses, matchesPlayed)
+    ),
+
+    goals_for_per_match: roundNumber(
+      safeDivide(goalsFor, matchesPlayed)
+    ),
+
+    goals_against_per_match: roundNumber(
+      safeDivide(goalsAgainst, matchesPlayed)
+    ),
+
+    goal_difference_per_match: roundNumber(
+      safeDivide(goalDifference, matchesPlayed)
+    ),
+
+    clean_sheet_rate: roundNumber(
+      safeDivide(cleanSheets, matchesPlayed)
+    ),
+
+    btts_rate: roundNumber(
+      safeDivide(bttsMatches, matchesPlayed)
+    ),
+
+    over_15_rate: roundNumber(
+      safeDivide(over15Matches, matchesPlayed)
+    ),
+
+    over_25_rate: roundNumber(
+      safeDivide(over25Matches, matchesPlayed)
+    ),
+
+    over_35_rate: roundNumber(
+      safeDivide(over35Matches, matchesPlayed)
+    ),
+
+    recent_matches: recentMatches,
+    recent_wins: recentWins,
+    recent_draws: recentDraws,
+    recent_losses: recentLosses,
+    recent_goals_for: recentGoalsFor,
+    recent_goals_against: recentGoalsAgainst,
+    recent_points: recentPoints,
+
+    recent_points_per_match: roundNumber(
+      safeDivide(recentPoints, recentMatches)
+    ),
+
+    recent_win_rate: roundNumber(
+      safeDivide(recentWins, recentMatches)
+    ),
+
+    recent_goals_for_per_match: roundNumber(
+      safeDivide(recentGoalsFor, recentMatches)
+    ),
+
+    recent_goals_against_per_match: roundNumber(
+      safeDivide(recentGoalsAgainst, recentMatches)
+    )
+  };
+}
+
+function compareFeatures(home, away) {
+  return {
+    points_per_match_difference: roundNumber(
+      home.points_per_match - away.points_per_match
+    ),
+
+    win_rate_difference: roundNumber(
+      home.win_rate - away.win_rate
+    ),
+
+    goals_for_per_match_difference: roundNumber(
+      home.goals_for_per_match -
+      away.goals_for_per_match
+    ),
+
+    goals_against_per_match_difference: roundNumber(
+      home.goals_against_per_match -
+      away.goals_against_per_match
+    ),
+
+    goal_difference_per_match_difference: roundNumber(
+      home.goal_difference_per_match -
+      away.goal_difference_per_match
+    ),
+
+    clean_sheet_rate_difference: roundNumber(
+      home.clean_sheet_rate -
+      away.clean_sheet_rate
+    ),
+
+    btts_rate_difference: roundNumber(
+      home.btts_rate -
+      away.btts_rate
+    ),
+
+    over_15_rate_difference: roundNumber(
+      home.over_15_rate -
+      away.over_15_rate
+    ),
+
+    over_25_rate_difference: roundNumber(
+      home.over_25_rate -
+      away.over_25_rate
+    ),
+
+    over_35_rate_difference: roundNumber(
+      home.over_35_rate -
+      away.over_35_rate
+    ),
+
+    recent_points_per_match_difference: roundNumber(
+      home.recent_points_per_match -
+      away.recent_points_per_match
+    ),
+
+    recent_win_rate_difference: roundNumber(
+      home.recent_win_rate -
+      away.recent_win_rate
+    ),
+
+    recent_goals_for_per_match_difference: roundNumber(
+      home.recent_goals_for_per_match -
+      away.recent_goals_for_per_match
+    ),
+
+    recent_goals_against_per_match_difference: roundNumber(
+      home.recent_goals_against_per_match -
+      away.recent_goals_against_per_match
+    )
+  };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -172,10 +375,6 @@ export default {
 
             updated++;
           } else {
-            // FIX: original code was missing `competitionCode` in the
-            // bind() list below, which left one placeholder unfilled
-            // and shifted every subsequent value into the wrong column
-            // (type -> competition_code, logo_url -> type, logo_url left null).
             await env.DB
               .prepare(`
                 INSERT INTO competitions (
@@ -281,13 +480,8 @@ export default {
         }
 
         const providerSeasonId = currentSeason.id;
-
-        const startDate =
-          currentSeason.startDate || null;
-
-        const endDate =
-          currentSeason.endDate || null;
-
+        const startDate = currentSeason.startDate || null;
+        const endDate = currentSeason.endDate || null;
         const seasonName =
           `${startDate} / ${endDate}`;
 
@@ -661,7 +855,6 @@ export default {
         }
 
         const data = await response.json();
-
         const matches = data.matches || [];
 
         const teamRows = await env.DB
@@ -684,7 +877,6 @@ export default {
         }
 
         const validMatches = [];
-
         let skipped = 0;
 
         for (const match of matches) {
@@ -965,9 +1157,6 @@ export default {
           );
         }
 
-        // ------------------------------------------------
-        // LOAD ALL TEAMS
-        // ------------------------------------------------
         const teamsResult =
           await env.DB
             .prepare(`
@@ -991,12 +1180,6 @@ export default {
         const teams =
           teamsResult.results || [];
 
-        // ------------------------------------------------
-        // LOAD ALL FINISHED MATCHES ONCE
-        //
-        // This is important because we do not want
-        // one database query for every team.
-        // ------------------------------------------------
         const matchesResult =
           await env.DB
             .prepare(`
@@ -1024,9 +1207,6 @@ export default {
         const finishedMatches =
           matchesResult.results || [];
 
-        // ------------------------------------------------
-        // BUILD MATCH LIST PER TEAM IN MEMORY
-        // ------------------------------------------------
         const teamMatches = new Map();
 
         for (const team of teams) {
@@ -1056,9 +1236,6 @@ export default {
           }
         }
 
-        // ------------------------------------------------
-        // LOAD EXISTING STATISTICS
-        // ------------------------------------------------
         const statisticsResult =
           await env.DB
             .prepare(`
@@ -1087,9 +1264,6 @@ export default {
           );
         }
 
-        // ------------------------------------------------
-        // LOAD EXISTING FORM
-        // ------------------------------------------------
         const formResult =
           await env.DB
             .prepare(`
@@ -1126,9 +1300,6 @@ export default {
         let formCreated = 0;
         let formUpdated = 0;
 
-        // ------------------------------------------------
-        // PROCESS TEAMS IN MEMORY
-        // ------------------------------------------------
         for (const team of teams) {
           const teamId =
             Number(team.id);
@@ -1210,9 +1381,6 @@ export default {
           const goalDifference =
             goalsFor - goalsAgainst;
 
-          // ------------------------------------------------
-          // TEAM STATISTICS UPSERT
-          // ------------------------------------------------
           if (statisticsMap.has(teamId)) {
             statisticsStatements.push(
               env.DB
@@ -1305,9 +1473,6 @@ export default {
             statisticsCreated++;
           }
 
-          // ------------------------------------------------
-          // LAST 5 MATCHES
-          // ------------------------------------------------
           const recentMatches =
             [...matches]
               .sort(
@@ -1367,9 +1532,6 @@ export default {
             }
           }
 
-          // ------------------------------------------------
-          // TEAM FORM UPSERT
-          // ------------------------------------------------
           if (formMap.has(teamId)) {
             formStatements.push(
               env.DB
@@ -1442,9 +1604,6 @@ export default {
           }
         }
 
-        // ------------------------------------------------
-        // BATCH STATISTICS
-        // ------------------------------------------------
         const STAT_BATCH_SIZE = 20;
 
         for (
@@ -1463,9 +1622,6 @@ export default {
           }
         }
 
-        // ------------------------------------------------
-        // BATCH FORM
-        // ------------------------------------------------
         for (
           let start = 0;
           start < formStatements.length;
@@ -1482,9 +1638,6 @@ export default {
           }
         }
 
-        // ------------------------------------------------
-        // FINAL COUNTS
-        // ------------------------------------------------
         const statisticsCount =
           await env.DB
             .prepare(`
@@ -1550,6 +1703,293 @@ export default {
             records_in_database:
               formCount?.total || 0
           }
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+
+    // ==================================================
+    // TEST PREDICTION FEATURES
+    //
+    // /api/test-features?match=11
+    //
+    // D1 ONLY.
+    // This endpoint does not create predictions.
+    // It only calculates and displays feature values.
+    // ==================================================
+    if (url.pathname === "/api/test-features") {
+      try {
+        if (!env.DB) {
+          throw new Error(
+            "D1 binding DB is not configured"
+          );
+        }
+
+        const matchIdParam =
+          url.searchParams.get("match");
+
+        if (!matchIdParam) {
+          return json(
+            {
+              success: false,
+              message:
+                "Missing match parameter. Example: ?match=11"
+            },
+            400
+          );
+        }
+
+        const matchId =
+          Number(matchIdParam);
+
+        if (!Number.isInteger(matchId) || matchId <= 0) {
+          return json(
+            {
+              success: false,
+              message:
+                "The match parameter must be a valid positive D1 match ID."
+            },
+            400
+          );
+        }
+
+        // ------------------------------------------------
+        // LOAD MATCH
+        // ------------------------------------------------
+        const match =
+          await env.DB
+            .prepare(`
+              SELECT
+                m.id,
+                m.provider_id,
+                m.competition_id,
+                m.season_id,
+                m.kickoff_at,
+                m.status,
+                m.home_team_id,
+                m.away_team_id,
+                home.name AS home_team_name,
+                away.name AS away_team_name
+              FROM matches m
+              INNER JOIN teams home
+                ON home.id = m.home_team_id
+              INNER JOIN teams away
+                ON away.id = m.away_team_id
+              WHERE m.id = ?
+            `)
+            .bind(matchId)
+            .first();
+
+        if (!match) {
+          return json(
+            {
+              success: false,
+              message:
+                `Match ${matchId} was not found in D1.`
+            },
+            404
+          );
+        }
+
+        // ------------------------------------------------
+        // LOAD HOME TEAM STATISTICS
+        // ------------------------------------------------
+        const homeStatistics =
+          await env.DB
+            .prepare(`
+              SELECT
+                matches_played,
+                wins,
+                draws,
+                losses,
+                goals_for,
+                goals_against,
+                goal_difference,
+                points,
+                clean_sheets,
+                btts_matches,
+                over_15_matches,
+                over_25_matches,
+                over_35_matches
+              FROM team_statistics
+              WHERE team_id = ?
+                AND competition_id = ?
+                AND season_id = ?
+              LIMIT 1
+            `)
+            .bind(
+              match.home_team_id,
+              match.competition_id,
+              match.season_id
+            )
+            .first();
+
+        // ------------------------------------------------
+        // LOAD AWAY TEAM STATISTICS
+        // ------------------------------------------------
+        const awayStatistics =
+          await env.DB
+            .prepare(`
+              SELECT
+                matches_played,
+                wins,
+                draws,
+                losses,
+                goals_for,
+                goals_against,
+                goal_difference,
+                points,
+                clean_sheets,
+                btts_matches,
+                over_15_matches,
+                over_25_matches,
+                over_35_matches
+              FROM team_statistics
+              WHERE team_id = ?
+                AND competition_id = ?
+                AND season_id = ?
+              LIMIT 1
+            `)
+            .bind(
+              match.away_team_id,
+              match.competition_id,
+              match.season_id
+            )
+            .first();
+
+        // ------------------------------------------------
+        // LOAD HOME TEAM FORM
+        // ------------------------------------------------
+        const homeForm =
+          await env.DB
+            .prepare(`
+              SELECT
+                matches_considered,
+                wins,
+                draws,
+                losses,
+                goals_for,
+                goals_against,
+                points,
+                form_string
+              FROM team_form
+              WHERE team_id = ?
+                AND competition_id = ?
+                AND season_id = ?
+              LIMIT 1
+            `)
+            .bind(
+              match.home_team_id,
+              match.competition_id,
+              match.season_id
+            )
+            .first();
+
+        // ------------------------------------------------
+        // LOAD AWAY TEAM FORM
+        // ------------------------------------------------
+        const awayForm =
+          await env.DB
+            .prepare(`
+              SELECT
+                matches_considered,
+                wins,
+                draws,
+                losses,
+                goals_for,
+                goals_against,
+                points,
+                form_string
+              FROM team_form
+              WHERE team_id = ?
+                AND competition_id = ?
+                AND season_id = ?
+              LIMIT 1
+            `)
+            .bind(
+              match.away_team_id,
+              match.competition_id,
+              match.season_id
+            )
+            .first();
+
+        if (!homeStatistics || !awayStatistics) {
+          throw new Error(
+            "Statistics are missing for one or both teams. Run /api/sync-statistics?competition=PL first."
+          );
+        }
+
+        if (!homeForm || !awayForm) {
+          throw new Error(
+            "Form data is missing for one or both teams. Run /api/sync-statistics?competition=PL first."
+          );
+        }
+
+        // ------------------------------------------------
+        // BUILD FEATURES
+        // ------------------------------------------------
+        const homeFeatures =
+          buildTeamFeatures(
+            homeStatistics,
+            homeForm
+          );
+
+        const awayFeatures =
+          buildTeamFeatures(
+            awayStatistics,
+            awayForm
+          );
+
+        const comparison =
+          compareFeatures(
+            homeFeatures,
+            awayFeatures
+          );
+
+        return json({
+          success: true,
+          source: "D1 statistics and form",
+          prediction_generated: false,
+
+          match: {
+            id: Number(match.id),
+            provider_id: Number(match.provider_id),
+            competition_id: Number(
+              match.competition_id
+            ),
+            season_id: Number(match.season_id),
+            kickoff_at: match.kickoff_at,
+            status: match.status,
+            home_team: {
+              id: Number(match.home_team_id),
+              name: match.home_team_name
+            },
+            away_team: {
+              id: Number(match.away_team_id),
+              name: match.away_team_name
+            }
+          },
+
+          home: {
+            team: match.home_team_name,
+            statistics: homeFeatures,
+            form: {
+              form_string:
+                homeForm.form_string || ""
+            }
+          },
+
+          away: {
+            team: match.away_team_name,
+            statistics: awayFeatures,
+            form: {
+              form_string:
+                awayForm.form_string || ""
+            }
+          },
+
+          comparison
         });
       } catch (error) {
         return errorResponse(error);
