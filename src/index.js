@@ -2,6 +2,23 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    const json = (data, status = 200) =>
+      new Response(JSON.stringify(data), {
+        status,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+
+    const errorResponse = (error) =>
+      json(
+        {
+          success: false,
+          message: error?.message || String(error)
+        },
+        500
+      );
+
     // --------------------------------------------------
     // HOME
     // --------------------------------------------------
@@ -14,7 +31,7 @@ export default {
     }
 
     // --------------------------------------------------
-    // TEST D1 DATABASE
+    // TEST D1
     // --------------------------------------------------
     if (url.pathname === "/api/test-db") {
       try {
@@ -22,30 +39,12 @@ export default {
           .prepare("SELECT 1 AS test")
           .first();
 
-        return new Response(
-          JSON.stringify({
-            success: true,
-            database: result
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json"
-            }
-          }
-        );
+        return json({
+          success: true,
+          database: result
+        });
       } catch (error) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            message: error.message
-          }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json"
-            }
-          }
-        );
+        return errorResponse(error);
       }
     }
 
@@ -55,9 +54,7 @@ export default {
     if (url.pathname === "/api/test-football") {
       try {
         if (!env.FOOTBALL_DATA_TOKEN) {
-          throw new Error(
-            "FOOTBALL_DATA_TOKEN is not configured"
-          );
+          throw new Error("FOOTBALL_DATA_TOKEN is not configured");
         }
 
         const response = await fetch(
@@ -81,31 +78,13 @@ export default {
 
         const data = await response.json();
 
-        return new Response(
-          JSON.stringify({
-            success: true,
-            count: data.competitions.length,
-            competitions: data.competitions
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json"
-            }
-          }
-        );
+        return json({
+          success: true,
+          count: data.competitions?.length || 0,
+          competitions: data.competitions || []
+        });
       } catch (error) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            message: error.message
-          }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json"
-            }
-          }
-        );
+        return errorResponse(error);
       }
     }
 
@@ -115,15 +94,12 @@ export default {
     if (url.pathname === "/api/sync-competitions") {
       try {
         if (!env.FOOTBALL_DATA_TOKEN) {
-          throw new Error(
-            "FOOTBALL_DATA_TOKEN is not configured"
-          );
+          throw new Error("FOOTBALL_DATA_TOKEN is not configured");
         }
 
         const response = await fetch(
           "https://api.football-data.org/v4/competitions",
           {
-            method: "GET",
             headers: {
               "X-Auth-Token": env.FOOTBALL_DATA_TOKEN,
               "Accept": "application/json"
@@ -144,7 +120,7 @@ export default {
         let inserted = 0;
         let updated = 0;
 
-        for (const competition of data.competitions) {
+        for (const competition of data.competitions || []) {
           const providerId = competition.id;
           const name = competition.name;
           const country = competition.area?.name || null;
@@ -226,65 +202,41 @@ export default {
           }
         }
 
-        return new Response(
-          JSON.stringify({
-            success: true,
-            source: "football-data.org",
-            total: data.competitions.length,
-            inserted,
-            updated
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json"
-            }
-          }
-        );
+        return json({
+          success: true,
+          source: "football-data.org",
+          total: data.competitions?.length || 0,
+          inserted,
+          updated
+        });
       } catch (error) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            message: error.message
-          }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json"
-            }
-          }
-        );
+        return errorResponse(error);
       }
     }
 
     // --------------------------------------------------
     // SYNC TEAMS
+    //
     // Example:
     // /api/sync-teams?competition=PL
     // --------------------------------------------------
     if (url.pathname === "/api/sync-teams") {
       try {
         if (!env.FOOTBALL_DATA_TOKEN) {
-          throw new Error(
-            "FOOTBALL_DATA_TOKEN is not configured"
-          );
+          throw new Error("FOOTBALL_DATA_TOKEN is not configured");
         }
 
         const competitionCode =
           url.searchParams.get("competition");
 
         if (!competitionCode) {
-          return new Response(
-            JSON.stringify({
+          return json(
+            {
               success: false,
               message:
                 "Missing competition parameter. Example: ?competition=PL"
-            }),
-            {
-              status: 400,
-              headers: {
-                "Content-Type": "application/json"
-              }
-            }
+            },
+            400
           );
         }
 
@@ -312,7 +264,6 @@ export default {
             competitionCode
           )}`,
           {
-            method: "GET",
             headers: {
               "X-Auth-Token": env.FOOTBALL_DATA_TOKEN,
               "Accept": "application/json"
@@ -330,23 +281,21 @@ export default {
 
         const data = await response.json();
 
-        const providerSeasonId =
-          data.currentSeason?.id;
+        const currentSeason = data.currentSeason;
 
-        if (!providerSeasonId) {
+        if (!currentSeason?.id) {
           throw new Error(
             `No current season was returned for ${competitionCode}`
           );
         }
 
+        const providerSeasonId = currentSeason.id;
+
         const seasonName =
-          `${data.currentSeason.startDate} / ${data.currentSeason.endDate}`;
+          `${currentSeason.startDate} / ${currentSeason.endDate}`;
 
-        const startDate =
-          data.currentSeason.startDate || null;
-
-        const endDate =
-          data.currentSeason.endDate || null;
+        const startDate = currentSeason.startDate || null;
+        const endDate = currentSeason.endDate || null;
 
         let season = await env.DB
           .prepare(`
@@ -380,7 +329,7 @@ export default {
             )
             .run();
         } else {
-          const insertedSeason = await env.DB
+          const result = await env.DB
             .prepare(`
               INSERT INTO seasons (
                 competition_id,
@@ -402,25 +351,56 @@ export default {
             .run();
 
           season = {
-            id: insertedSeason.meta.last_row_id
+            id: result.meta.last_row_id
           };
         }
 
+        const teams = data.teams || [];
+
+        /*
+         * Load all existing teams for this competition's
+         * provider IDs in ONE query.
+         */
+        const providerIds = teams
+          .map((team) => team.id)
+          .filter(Boolean);
+
+        let existingTeams = [];
+
+        if (providerIds.length > 0) {
+          const placeholders =
+            providerIds.map(() => "?").join(",");
+
+          existingTeams = await env.DB
+            .prepare(`
+              SELECT id, provider_id
+              FROM teams
+              WHERE provider_id IN (${placeholders})
+            `)
+            .bind(...providerIds)
+            .all();
+        }
+
+        const existingTeamMap = new Map();
+
+        for (const team of existingTeams.results || []) {
+          existingTeamMap.set(
+            Number(team.provider_id),
+            Number(team.id)
+          );
+        }
+
+        const teamStatements = [];
+
         let insertedTeams = 0;
         let updatedTeams = 0;
-        let linkedTeams = 0;
-
-        const teams = data.teams || [];
 
         for (const team of teams) {
           const providerId = team.id;
           const name = team.name;
-          const shortName =
-            team.shortName || null;
-          const country =
-            team.area?.name || null;
-          const crestUrl =
-            team.crest || null;
+          const shortName = team.shortName || null;
+          const country = team.area?.name || null;
+          const crestUrl = team.crest || null;
 
           const slug = name
             .toLowerCase()
@@ -428,163 +408,189 @@ export default {
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/^-+|-+$/g, "");
 
-          const existingTeam = await env.DB
-            .prepare(`
-              SELECT id
-              FROM teams
-              WHERE provider_id = ?
-            `)
-            .bind(providerId)
-            .first();
-
-          let teamId;
-
-          if (existingTeam) {
-            teamId = existingTeam.id;
-
-            await env.DB
-              .prepare(`
-                UPDATE teams
-                SET
-                  name = ?,
-                  short_name = ?,
-                  slug = ?,
-                  country = ?,
-                  crest_url = ?,
-                  active = 1,
-                  updated_at = CURRENT_TIMESTAMP
-                WHERE provider_id = ?
-              `)
-              .bind(
-                name,
-                shortName,
-                slug,
-                country,
-                crestUrl,
-                providerId
-              )
-              .run();
+          if (existingTeamMap.has(providerId)) {
+            teamStatements.push(
+              env.DB
+                .prepare(`
+                  UPDATE teams
+                  SET
+                    name = ?,
+                    short_name = ?,
+                    slug = ?,
+                    country = ?,
+                    crest_url = ?,
+                    active = 1,
+                    updated_at = CURRENT_TIMESTAMP
+                  WHERE provider_id = ?
+                `)
+                .bind(
+                  name,
+                  shortName,
+                  slug,
+                  country,
+                  crestUrl,
+                  providerId
+                )
+            );
 
             updatedTeams++;
           } else {
-            const insertedTeam = await env.DB
-              .prepare(`
-                INSERT INTO teams (
-                  provider_id,
+            teamStatements.push(
+              env.DB
+                .prepare(`
+                  INSERT INTO teams (
+                    provider_id,
+                    name,
+                    short_name,
+                    slug,
+                    country,
+                    crest_url,
+                    active
+                  )
+                  VALUES (?, ?, ?, ?, ?, ?, 1)
+                `)
+                .bind(
+                  providerId,
                   name,
-                  short_name,
+                  shortName,
                   slug,
                   country,
-                  crest_url,
-                  active
+                  crestUrl
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 1)
-              `)
-              .bind(
-                providerId,
-                name,
-                shortName,
-                slug,
-                country,
-                crestUrl
-              )
-              .run();
-
-            teamId =
-              insertedTeam.meta.last_row_id;
+            );
 
             insertedTeams++;
           }
+        }
 
-          const existingLink = await env.DB
+        if (teamStatements.length > 0) {
+          await env.DB.batch(teamStatements);
+        }
+
+        /*
+         * Reload all team IDs in ONE query.
+         */
+        const refreshedTeams =
+          providerIds.length > 0
+            ? await env.DB
+                .prepare(`
+                  SELECT id, provider_id
+                  FROM teams
+                  WHERE provider_id IN (${providerIds
+                    .map(() => "?")
+                    .join(",")})
+                `)
+                .bind(...providerIds)
+                .all()
+            : { results: [] };
+
+        const teamIdMap = new Map();
+
+        for (const team of refreshedTeams.results || []) {
+          teamIdMap.set(
+            Number(team.provider_id),
+            Number(team.id)
+          );
+        }
+
+        /*
+         * Get existing links in ONE query.
+         */
+        const existingLinks =
+          await env.DB
             .prepare(`
-              SELECT id
+              SELECT team_id
               FROM team_seasons
-              WHERE team_id = ?
-                AND competition_id = ?
+              WHERE competition_id = ?
                 AND season_id = ?
             `)
             .bind(
-              teamId,
               competition.id,
               season.id
             )
-            .first();
+            .all();
 
-          if (!existingLink) {
-            await env.DB
-              .prepare(`
-                INSERT INTO team_seasons (
-                  team_id,
-                  competition_id,
-                  season_id,
-                  squad_status
+        const linkedTeamIds = new Set(
+          (existingLinks.results || []).map(
+            (row) => Number(row.team_id)
+          )
+        );
+
+        const linkStatements = [];
+        let linkedTeams = 0;
+
+        for (const team of teams) {
+          const teamId = teamIdMap.get(
+            Number(team.id)
+          );
+
+          if (!teamId) {
+            continue;
+          }
+
+          if (!linkedTeamIds.has(teamId)) {
+            linkStatements.push(
+              env.DB
+                .prepare(`
+                  INSERT INTO team_seasons (
+                    team_id,
+                    competition_id,
+                    season_id,
+                    squad_status
+                  )
+                  VALUES (?, ?, ?, ?)
+                `)
+                .bind(
+                  teamId,
+                  competition.id,
+                  season.id,
+                  "ACTIVE"
                 )
-                VALUES (?, ?, ?, ?)
-              `)
-              .bind(
-                teamId,
-                competition.id,
-                season.id,
-                "ACTIVE"
-              )
-              .run();
+            );
 
             linkedTeams++;
           }
         }
 
-        return new Response(
-          JSON.stringify({
-            success: true,
-            source: "football-data.org",
-            competition: {
-              id: competition.id,
-              provider_id: competition.provider_id,
-              code: competition.competition_code,
-              name: competition.name
-            },
-            season: {
-              id: season.id,
-              provider_id: providerSeasonId,
-              name: seasonName,
-              year: String(
-                new Date(startDate).getUTCFullYear()
-              )
-            },
-            teams: {
-              total: teams.length,
-              inserted: insertedTeams,
-              updated: updatedTeams,
-              linked: linkedTeams
-            }
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json"
-            }
+        if (linkStatements.length > 0) {
+          await env.DB.batch(linkStatements);
+        }
+
+        return json({
+          success: true,
+          source: "football-data.org",
+          competition: {
+            id: competition.id,
+            provider_id: competition.provider_id,
+            code: competition.competition_code,
+            name: competition.name
+          },
+          season: {
+            id: season.id,
+            provider_id: providerSeasonId,
+            name: seasonName,
+            year: String(startDate).slice(0, 4)
+          },
+          teams: {
+            total: teams.length,
+            inserted: insertedTeams,
+            updated: updatedTeams,
+            linked: linkedTeams
           }
-        );
+        });
       } catch (error) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            message: error.message
-          }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json"
-            }
-          }
-        );
+        return errorResponse(error);
       }
     }
 
     // --------------------------------------------------
     // SYNC MATCHES
+    //
     // Example:
     // /api/sync-matches?competition=PL
+    //
+    // Optional:
+    // ?competition=PL&season=2026
     // --------------------------------------------------
     if (url.pathname === "/api/sync-matches") {
       try {
@@ -598,24 +604,19 @@ export default {
           url.searchParams.get("competition");
 
         if (!competitionCode) {
-          return new Response(
-            JSON.stringify({
+          return json(
+            {
               success: false,
               message:
                 "Missing competition parameter. Example: ?competition=PL"
-            }),
-            {
-              status: 400,
-              headers: {
-                "Content-Type": "application/json"
-              }
-            }
+            },
+            400
           );
         }
 
-        // --------------------------------------------------
+        // ------------------------------------------------
         // FIND COMPETITION
-        // --------------------------------------------------
+        // ------------------------------------------------
         const competition = await env.DB
           .prepare(`
             SELECT
@@ -635,9 +636,9 @@ export default {
           );
         }
 
-        // --------------------------------------------------
+        // ------------------------------------------------
         // FIND CURRENT SEASON
-        // --------------------------------------------------
+        // ------------------------------------------------
         const season = await env.DB
           .prepare(`
             SELECT
@@ -657,25 +658,24 @@ export default {
 
         if (!season) {
           throw new Error(
-            `No current season was found for ${competitionCode}. Run sync-teams first.`
+            `No current season found for ${competitionCode}. Run sync-teams first.`
           );
         }
 
-        // --------------------------------------------------
+        // ------------------------------------------------
         // FETCH MATCHES
-        // --------------------------------------------------
-        const response = await fetch(
+        // ------------------------------------------------
+        const footballUrl =
           `https://api.football-data.org/v4/competitions/${encodeURIComponent(
             competitionCode
-          )}/matches`,
-          {
-            method: "GET",
-            headers: {
-              "X-Auth-Token": env.FOOTBALL_DATA_TOKEN,
-              "Accept": "application/json"
-            }
+          )}/matches`;
+
+        const response = await fetch(footballUrl, {
+          headers: {
+            "X-Auth-Token": env.FOOTBALL_DATA_TOKEN,
+            "Accept": "application/json"
           }
-        );
+        });
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -689,73 +689,57 @@ export default {
 
         const matches = data.matches || [];
 
-        let inserted = 0;
-        let updated = 0;
+        // ------------------------------------------------
+        // LOAD ALL TEAMS ONCE
+        // ------------------------------------------------
+        const teamRows = await env.DB
+          .prepare(`
+            SELECT
+              id,
+              provider_id
+            FROM teams
+            WHERE active = 1
+          `)
+          .all();
+
+        const teamMap = new Map();
+
+        for (const team of teamRows.results || []) {
+          teamMap.set(
+            Number(team.provider_id),
+            Number(team.id)
+          );
+        }
+
+        // ------------------------------------------------
+        // VALIDATE / PREPARE MATCHES
+        // ------------------------------------------------
+        const validMatches = [];
+
         let skipped = 0;
 
-        // --------------------------------------------------
-        // PROCESS MATCHES
-        // --------------------------------------------------
         for (const match of matches) {
-          const providerId = match.id;
-
           const homeProviderId =
             match.homeTeam?.id;
 
           const awayProviderId =
             match.awayTeam?.id;
 
-          if (!homeProviderId || !awayProviderId) {
+          const homeTeamId =
+            teamMap.get(Number(homeProviderId));
+
+          const awayTeamId =
+            teamMap.get(Number(awayProviderId));
+
+          if (!homeTeamId || !awayTeamId) {
             skipped++;
             continue;
           }
 
-          // --------------------------------------------------
-          // FIND LOCAL HOME TEAM
-          // --------------------------------------------------
-          const homeTeam = await env.DB
-            .prepare(`
-              SELECT id
-              FROM teams
-              WHERE provider_id = ?
-            `)
-            .bind(homeProviderId)
-            .first();
+          const score = match.score || {};
 
-          // --------------------------------------------------
-          // FIND LOCAL AWAY TEAM
-          // --------------------------------------------------
-          const awayTeam = await env.DB
-            .prepare(`
-              SELECT id
-              FROM teams
-              WHERE provider_id = ?
-            `)
-            .bind(awayProviderId)
-            .first();
-
-          if (!homeTeam || !awayTeam) {
-            skipped++;
-            continue;
-          }
-
-          // --------------------------------------------------
-          // MATCH DATA
-          // --------------------------------------------------
-          const matchday =
-            match.matchday || null;
-
-          const kickoffAt =
-            match.utcDate || null;
-
-          const status =
-            match.status || "SCHEDULED";
-
-          const homeScore =
-            match.score?.fullTime?.home ?? null;
-
-          const awayScore =
-            match.score?.fullTime?.away ?? null;
+          const fullTime =
+            score.fullTime || {};
 
           let winner = null;
 
@@ -763,129 +747,185 @@ export default {
             winner = match.score.winner;
           }
 
-          // --------------------------------------------------
-          // CHECK EXISTING MATCH
-          // --------------------------------------------------
-          const existingMatch = await env.DB
+          validMatches.push({
+            providerId: match.id,
+            competitionId: competition.id,
+            seasonId: season.id,
+            matchday: match.matchday || null,
+            homeTeamId,
+            awayTeamId,
+            kickoffAt: match.utcDate || null,
+            status: match.status || "SCHEDULED",
+            homeScore:
+              fullTime.home ?? null,
+            awayScore:
+              fullTime.away ?? null,
+            winner
+          });
+        }
+
+        // ------------------------------------------------
+        // LOAD EXISTING MATCHES ONCE
+        // ------------------------------------------------
+        const existingMatches =
+          await env.DB
             .prepare(`
-              SELECT id
+              SELECT
+                id,
+                provider_id
               FROM matches
-              WHERE provider_id = ?
+              WHERE competition_id = ?
+                AND season_id = ?
             `)
-            .bind(providerId)
-            .first();
+            .bind(
+              competition.id,
+              season.id
+            )
+            .all();
 
-          if (existingMatch) {
-            await env.DB
-              .prepare(`
-                UPDATE matches
-                SET
-                  competition_id = ?,
-                  season_id = ?,
-                  matchday = ?,
-                  home_team_id = ?,
-                  away_team_id = ?,
-                  kickoff_at = ?,
-                  status = ?,
-                  home_score = ?,
-                  away_score = ?,
-                  winner = ?
-                WHERE provider_id = ?
-              `)
-              .bind(
-                competition.id,
-                season.id,
-                matchday,
-                homeTeam.id,
-                awayTeam.id,
-                kickoffAt,
-                status,
-                homeScore,
-                awayScore,
-                winner,
-                providerId
+        const existingMatchMap = new Map();
+
+        for (const match of existingMatches.results || []) {
+          existingMatchMap.set(
+            Number(match.provider_id),
+            Number(match.id)
+          );
+        }
+
+        // ------------------------------------------------
+        // BUILD BATCHES
+        //
+        // We intentionally keep batches small.
+        // This prevents a large matchday sync from
+        // generating excessive subrequests.
+        // ------------------------------------------------
+        const BATCH_SIZE = 20;
+
+        let inserted = 0;
+        let updated = 0;
+
+        for (
+          let start = 0;
+          start < validMatches.length;
+          start += BATCH_SIZE
+        ) {
+          const batchMatches =
+            validMatches.slice(
+              start,
+              start + BATCH_SIZE
+            );
+
+          const statements = [];
+
+          for (const match of batchMatches) {
+            if (
+              existingMatchMap.has(
+                Number(match.providerId)
               )
-              .run();
+            ) {
+              statements.push(
+                env.DB
+                  .prepare(`
+                    UPDATE matches
+                    SET
+                      competition_id = ?,
+                      season_id = ?,
+                      matchday = ?,
+                      home_team_id = ?,
+                      away_team_id = ?,
+                      kickoff_at = ?,
+                      status = ?,
+                      home_score = ?,
+                      away_score = ?,
+                      winner = ?
+                    WHERE provider_id = ?
+                  `)
+                  .bind(
+                    match.competitionId,
+                    match.seasonId,
+                    match.matchday,
+                    match.homeTeamId,
+                    match.awayTeamId,
+                    match.kickoffAt,
+                    match.status,
+                    match.homeScore,
+                    match.awayScore,
+                    match.winner,
+                    match.providerId
+                  )
+              );
 
-            updated++;
-          } else {
-            await env.DB
-              .prepare(`
-                INSERT INTO matches (
-                  provider_id,
-                  competition_id,
-                  season_id,
-                  matchday,
-                  home_team_id,
-                  away_team_id,
-                  kickoff_at,
-                  status,
-                  home_score,
-                  away_score,
-                  winner
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              `)
-              .bind(
-                providerId,
-                competition.id,
-                season.id,
-                matchday,
-                homeTeam.id,
-                awayTeam.id,
-                kickoffAt,
-                status,
-                homeScore,
-                awayScore,
-                winner
-              )
-              .run();
+              updated++;
+            } else {
+              statements.push(
+                env.DB
+                  .prepare(`
+                    INSERT INTO matches (
+                      provider_id,
+                      competition_id,
+                      season_id,
+                      matchday,
+                      home_team_id,
+                      away_team_id,
+                      kickoff_at,
+                      status,
+                      home_score,
+                      away_score,
+                      winner
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  `)
+                  .bind(
+                    match.providerId,
+                    match.competitionId,
+                    match.seasonId,
+                    match.matchday,
+                    match.homeTeamId,
+                    match.awayTeamId,
+                    match.kickoffAt,
+                    match.status,
+                    match.homeScore,
+                    match.awayScore,
+                    match.winner
+                  )
+              );
 
-            inserted++;
+              inserted++;
+            }
+          }
+
+          if (statements.length > 0) {
+            await env.DB.batch(statements);
           }
         }
 
-        return new Response(
-          JSON.stringify({
-            success: true,
-            source: "football-data.org",
-            competition: {
-              id: competition.id,
-              provider_id: competition.provider_id,
-              code: competition.competition_code,
-              name: competition.name
-            },
-            season: {
-              id: season.id,
-              provider_id: season.provider_id,
-              name: season.name
-            },
-            matches: {
-              total: matches.length,
-              inserted,
-              updated,
-              skipped
-            }
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json"
-            }
+        return json({
+          success: true,
+          source: "football-data.org",
+          competition: {
+            id: competition.id,
+            provider_id: competition.provider_id,
+            code: competition.competition_code,
+            name: competition.name
+          },
+          season: {
+            id: season.id,
+            provider_id: season.provider_id,
+            name: season.name,
+            year: String(
+              season.start_date
+            ).slice(0, 4)
+          },
+          matches: {
+            total_from_provider: matches.length,
+            valid: validMatches.length,
+            inserted,
+            updated,
+            skipped
           }
-        );
+        });
       } catch (error) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            message: error.message
-          }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json"
-            }
-          }
-        );
+        return errorResponse(error);
       }
     }
 
